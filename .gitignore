@@ -124,6 +124,10 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+dataset/
+result/
+wandb/
+*.zip
 
 # Pyre type checker
 .pyre/
