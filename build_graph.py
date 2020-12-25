@@ -15,7 +15,7 @@ def add_edge(graph, c1s, c2s, d):
                 if c1 != c2:
                     graph[c1][c2] += d
 
-def build_concept_graph(dataset, alpha, no_weight):
+def build_concept_graph(dataset, alpha):
     prefix = 'dataset/{}/'.format(dataset)
     concepts = []
     with open(prefix+'concepts.txt', 'r', encoding='utf-8') as f:
@@ -53,8 +53,6 @@ def build_concept_graph(dataset, alpha, no_weight):
                 add_edge(cgraph, video_to_concept[i], video_to_concept[j], vgraph[i][j])
     print('video graph covered edge proportion: {:.3f}, total edge weight: {:.3f}'.format(len(vgraph[vgraph>0]) / (vn*vn), np.sum(vgraph[vgraph>0])))
     print('concept graph covered edge proportion: {:.3f}, total edge weight: {:.3f}'.format(len(cgraph[cgraph>0]) / (cn*cn), np.sum(cgraph)))
-    if no_weight:
-        cgraph[cgraph>0] = 1
     np.save(prefix+'graph.npy', np.array(cgraph))
 
 def set_seed(seed):
@@ -65,7 +63,6 @@ def main():
     parser = argparse.ArgumentParser(description='Prerequisite prediction')
     parser.add_argument('-dataset', type=str, required=True)
     parser.add_argument('-alpha', type=float, default=None)
-    parser.add_argument('-no_weight', action='store_true')
     parser.add_argument('-seed', type=int, default=0)
     args = parser.parse_args()
     assert os.path.exists('dataset/{}/'.format(args.dataset))
@@ -76,7 +73,7 @@ def main():
         if args.dataset in ['mooczh', 'cs', 'psy','math', 'phy', 'chem']:
             args.alpha = 0.3
     assert 0.0 <= args.alpha <= 1.0
-    build_concept_graph(args.dataset, args.alpha, args.no_weight)
+    build_concept_graph(args.dataset, args.alpha)
 
 if __name__ == '__main__':
     main()
