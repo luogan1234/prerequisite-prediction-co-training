@@ -88,7 +88,20 @@ class CoTrainingModels(BaseModule):
         for model in models:
             model.to(device)
     
-    def forward(self, batch, mode=''):
+    def forward(self, batch):
+        raise NotImplementedError
+    
+    def set_cached_embeds(self, batch, mode=''):
+        assert mode in ['text', 'graph', '']
+        models = []
+        if mode in ['text', '']:
+            models += self.text_models
+        if mode in ['graph', '']:
+            models += self.graph_models
+        for model in models:
+            model.set_cached_embeds(batch)
+    
+    def predict(self, batch, mode=''):
         assert mode in ['text', 'graph', '']
         models = []
         if mode in ['text', '']:
@@ -97,6 +110,6 @@ class CoTrainingModels(BaseModule):
             models += self.graph_models
         outs = []
         for model in models:
-            outs.append(F.softmax(model(batch), -1))
+            outs.append(F.softmax(model.predict(batch), -1))
         outs = torch.mean(torch.stack(outs), 0)
         return outs

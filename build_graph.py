@@ -73,7 +73,7 @@ def main():
     if not args.alpha:
         if args.dataset == 'moocen':
             args.alpha = 0.1
-        if args.dataset == 'mooczh':
+        if args.dataset in ['mooczh', 'cs', 'psy','math', 'phy', 'chem']:
             args.alpha = 0.3
     assert 0.0 <= args.alpha <= 1.0
     build_concept_graph(args.dataset, args.alpha, args.no_weight)

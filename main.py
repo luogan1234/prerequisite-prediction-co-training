@@ -24,10 +24,10 @@ def main():
     if not os.path.exists('result/predictions/'):
         os.mkdir('result/predictions/')
     parser = argparse.ArgumentParser(description='Prerequisite prediction')
-    parser.add_argument('-dataset', type=str, required=True, choices=['moocen', 'mooczh'])
+    parser.add_argument('-dataset', type=str, required=True, choices=['moocen', 'mooczh', 'cs', 'math', 'psy', 'phy', 'chem'])
     parser.add_argument('-text_encoder', type=str, required=True, choices=['lstm', 'bert', 'bert-freeze'])
     parser.add_argument('-graph_layer', type=str, required=True, choices=['gcn', 'gat'])
-    parser.add_argument('-init_num', type=int, default=512)
+    parser.add_argument('-init_num', type=int, default=-1)
     parser.add_argument('-max_change_num', type=int, default=36)
     parser.add_argument('-seed', type=int, default=0)
     parser.add_argument('-cpu', action='store_true')

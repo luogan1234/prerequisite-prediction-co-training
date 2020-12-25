@@ -127,6 +127,7 @@ dmypy.json
 dataset/
 result/
 wandb/
+label/
 *.zip
 
 # Pyre type checker

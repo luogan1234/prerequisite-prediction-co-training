@@ -11,6 +11,7 @@ import tqdm
 import random
 from model.co_training_models import CoTrainingModels
 import pickle
+import copy
 
 class Processor:
     def __init__(self, config, data_loader):
@@ -57,12 +58,17 @@ class Processor:
         return eval_loss, score
     
     def new_label(self, data, mode):
-        # generate new labels from ensemble predictions by selected models
+        # cache embeddings first, especially for text models (the unlabeled data is O(n^2))
+        print('Cache concept embeddings.')
+        concepts = self.data_loader.get_concepts()
         self.model.eval(mode)
+        for batch in tqdm.tqdm(concepts):
+            self.model.set_cached_embeds(batch)
+        # generate new labels from ensemble predictions by selected models
         candidates = []
         print('Generate new labels from ensemble predictions.')
         for batch in tqdm.tqdm(data):
-            outputs = self.model(batch, mode).detach().cpu().numpy()
+            outputs = self.model.predict(batch, mode).detach().cpu().numpy()
             pred_classes, pred_probs = np.argmax(outputs, axis=1), np.max(outputs, axis=1)
             for i, (pred_class, pred_prob) in enumerate(zip(pred_classes, pred_probs)):
                 if pred_prob > self.config.threshold:
@@ -81,13 +87,13 @@ class Processor:
         return n1 > 0
     
     def score_to_str(self, score):
-        s = 'acc: {:.3f}, p: {:.3f}, r: {:.3f}, f1: {:.3f}'.format(score['acc'], score['p'], score['r'], score['f1'])
+        s = 'acc: {:.4f}, p: {:.4f}, r: {:.4f}, f1: {:.4f}'.format(score['acc'], score['p'], score['r'], score['f1'])
         return s
     
-    def train_model(self, mode):
+    def train_model(self, mode, do_new_label=True):
         # train each selected model seperately
         self.model.clear_models(mode)
-        average_test_loss, scores = 0.0, []
+        scores = []
         for i in range(self.config.ensemble_num):
             print('Ensemble {} model id {} train start.'.format(mode, i))
             train, unlabeled, eval, test = self.data_loader.get_train(mode)
@@ -100,7 +106,7 @@ class Processor:
             model.train()
             optimizer = optim.Adam(model.parameters(), lr=self.config.lr(mode))
             train_tqdm = tqdm.tqdm(range(self.config.max_epochs))
-            train_tqdm.set_description('Epoch {} | train_loss: {:.3f} eval_loss: {:.3f}'.format(0, 0, 0))
+            train_tqdm.set_description('Epoch {} | train_loss: {:.4f} eval_loss: {:.4f}'.format(0, 0, 0))
             best_para, min_loss, patience = model.state_dict(), 1e16, 0
             for epoch in train_tqdm:
                 train_loss = 0.0
@@ -109,27 +115,29 @@ class Processor:
                     train_loss += loss
                 train_loss /= len(train)
                 eval_loss, score = self.evaluate(eval, model)
-                train_tqdm.set_description('Epoch {} | train_loss: {:.3f} eval_loss: {:.3f}'.format(epoch, train_loss, eval_loss))
+                train_tqdm.set_description('Epoch {} | train_loss: {:.4f} eval_loss: {:.4f}'.format(epoch, train_loss, eval_loss))
                 if eval_loss < min_loss:
                     patience = 0
                     min_loss = eval_loss
-                    best_para = model.state_dict()
+                    best_para = copy.deepcopy(model.state_dict())
                 patience += 1
                 if patience > self.config.early_stop_time:
                     train_tqdm.close()
                     break
-            print('Train finished, stop at {} epochs, min eval_loss {:.3f}'.format(epoch, min_loss))
+            model.load_state_dict(best_para)
+            print('Train model {} finished, stop at {} epochs, min eval_loss {:.4f}'.format(i, epoch, min_loss))
             test_loss, score = self.evaluate(test, model)
-            average_test_loss += test_loss
             scores.append(score)
-            print('Test finished, test loss {:.3f},'.format(test_loss), self.score_to_str(score))
-        flag = self.new_label(unlabeled, mode)
-        average_test_loss /= self.config.ensemble_num
+            print('Test model {} finished, test loss {:.4f},'.format(i, test_loss), self.score_to_str(score))
+        if do_new_label:
+            flag = self.new_label(unlabeled, mode)
+        else:
+            flag = True
         average_score = {}
         for key in scores[0]:
-            average_score[key] = round(sum([score[key] for score in scores])/len(scores), 3)
-        print('Train {} models finished, average test loss {:.3f},'.format(mode, average_test_loss), self.score_to_str(average_score))
-        return average_test_loss, average_score, flag
+            average_score[key] = sum([score[key] for score in scores])/len(scores)
+        print('Train {} models finished, ensemble'.format(mode), self.score_to_str(average_score))
+        return average_score, flag
     
     def get_concept_embeddings(self):
         #self.config.embeddings = self.data_loader.dataset.concept_embedding[:, :self.config.graph_embedding_dim].to(self.config.device)
@@ -144,51 +152,54 @@ class Processor:
     
     def train(self):
         self.model = CoTrainingModels(self.config)
-        min_loss_text, min_loss_graph = 1e16, 1e16
+        score_texts, score_graphs = [], []
         for iteration in range(self.config.max_cotraining_iterations):
             print('Iteration {} start.'.format(iteration))
             print('Train text models.')
-            loss_text, score_text, flag_text = self.train_model('text')
+            score_text, flag_text = self.train_model('text', iteration>0)
             print('Get concept embeddings.')
             self.get_concept_embeddings()
             print('Train graph models.')
-            loss_graph, score_graph, flag_graph = self.train_model('graph')
-            if loss_text < min_loss_text:
-                best_para_text = self.model.state_dict('text')
-                min_loss_text = loss_text
-                best_score_text = score_text
-            if loss_graph < min_loss_graph:
-                best_para_graph = self.model.state_dict('graph')
-                min_loss_graph = loss_graph
-                best_score_graph = score_graph
+            score_graph, flag_graph = self.train_model('graph', iteration>0)
+            score_texts.append(score_text)
+            score_graphs.append(score_graph)
             if not flag_text and not flag_graph:
                 print('Stop early, since no samples in train_unlabeled are new labeled after iteration {}'.format(iteration))
                 break
         if flag_text | flag_graph:
             print('Stop normally after reaching the max_cotraining_iterations.')
         with open('result/model_states/{}.pth'.format(self.config.store_name()), 'wb') as f:
-            torch.save([best_para_text, best_para_graph], f)
+            para_text = self.model.state_dict('text')
+            para_graph = self.model.state_dict('graph')
+            torch.save([para_text, para_graph], f)
         with open('result/result.txt', 'a', encoding='utf-8') as f:
             obj = self.config.parameter_info()
-            obj['score_text'] = best_score_text
-            obj['score_graph'] = best_score_graph
+            obj['score_texts'] = score_texts
+            obj['score_graphs'] = score_graphs
             f.write(json.dumps(obj)+'\n')
     
     def predict(self):
         self.model = CoTrainingModels(self.config)
-        data = self.data_loader.get_predict()
         with open('result/model_states/{}.pth'.format(self.config.store_name()), 'rb') as f:
-            best_para_text, best_para_graph = torch.load(f)
-            self.model.load_state_dict(best_para_text, 'text')
-            self.model.load_state_dict(best_para_graph, 'graph')
+            para_text, para_graph = torch.load(f)
+            self.model.load_state_dict(para_text, 'text')
+            self.model.load_state_dict(para_graph, 'graph')
         self.model.to(self.config.device)
+        print('Cache concept embeddings.')
+        concepts = self.data_loader.get_concepts()
+        self.model.eval()
+        for mode in ['text', 'graph']:
+            for batch in tqdm.tqdm(concepts):
+                self.model.set_cached_embeds(batch)
+        data = self.data_loader.get_predict()
         self.get_concept_embeddings()
+        print('Predict prerequisite relations between concepts.')
         self.model.eval()
         res = []
         for batch in tqdm.tqdm(data):
             with torch.no_grad():
-                preds_text = self.model(batch, 'text')
-                preds_graph = self.model(batch, 'graph')
+                preds_text = self.model.predict(batch, 'text')
+                preds_graph = self.model.predict(batch, 'graph')
             preds_text = preds_text.cpu().tolist()
             preds_graph = preds_graph.cpu().tolist()
             for i in range(len(batch['origins'])):

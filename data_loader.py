@@ -61,6 +61,10 @@ class PreqDataset:
         else:
             with open(file, 'rb') as f:
                 self.concept_embedding = torch.load(f)
+        # create concept data
+        self.concept_data = []
+        for i, token in enumerate(self.tokens):
+            self.concept_data.append({'i': i, 't': token})
         # load labeled data
         self.labeled_data, pairs = [], set()
         with open(os.path.join(self.dataset_path, 'pairs.txt'), 'r', encoding='utf-8') as f:
@@ -87,6 +91,7 @@ class PreqDataset:
             self.graph = np.load(graph_path)
         else:
             self.graph = np.eye(n)
+        config.set_concepts_parameters(self.concepts)
         config.set_gcn_parameters(self.graph)
         print('data loader init finished.')
 
@@ -122,12 +127,14 @@ class MyConceptBatch:
         self.config = config
     
     def __call__(self, data):
-        max_len = max([len(datum) for datum in data])
-        concepts = []
+        max_len = max([len(datum['t']) for datum in data])
+        i, t = [], []
         for datum in data:
-            concepts.append(datum+[0]*(max_len-len(datum)))
-        concepts = torch.tensor(concepts, dtype=torch.long).to(self.config.device)
-        obj = {'concepts': concepts}
+            i.append(datum['i'])
+            t.append(datum['t']+[0]*(max_len-len(datum['t'])))
+        i = torch.tensor(i, dtype=torch.long).to(self.config.device)
+        t = torch.tensor(t, dtype=torch.long).to(self.config.device)
+        obj = {'i': i, 't': t}
         return obj
 
 class PreqDataLoader:
@@ -143,15 +150,12 @@ class PreqDataLoader:
         for i in range(self.config.num_classes):
             class_labeled = [datum for datum in labeled if datum['ground_truth']==i]
             n, d = len(class_labeled), self.config.init_num
+            if d == -1:
+                d = int(n*0.8)
             splits = random_split(class_labeled, [d, (n-d)//2, (n-d+1)//2])
             train += splits[0]
             eval += splits[1]
             test += splits[2]
-        '''
-        n = len(labeled)
-        d = self.config.init_num
-        train, eval, test = random_split(labeled, [d*2, (n-d*2)//2, (n-d*2+1)//2])
-        '''
         train += [datum for datum in unlabeled if datum['label'] >= 0]
         train = DataLoader(train, self.config.batch_size('train'), shuffle=True, collate_fn=self.fn)
         unlabeled = DataLoader(unlabeled, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
@@ -160,8 +164,8 @@ class PreqDataLoader:
         return train, unlabeled, eval, test
     
     def get_concepts(self):
-        data = self.dataset.tokens
-        data = DataLoader(data, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn2)
+        concepts = self.dataset.concept_data
+        data = DataLoader(concepts, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn2)
         return data
     
     def get_predict(self):

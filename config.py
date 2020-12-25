@@ -14,7 +14,7 @@ class Config:
         if dataset in ['moocen']:
             self.language = 'en'
             self.vocab_num = 30522  # bert-base-uncased
-        if dataset in ['mooczh']:
+        if dataset in ['mooczh', 'cs', 'psy', 'math', 'phy', 'chem']:
             self.language = 'zh'
             self.vocab_num = 21128  # bert-base-chinese
         assert self.language, 'Need to provide the language information for new datasets'
@@ -25,12 +25,12 @@ class Config:
         self.text_embedding_dim = 768 if text_encoder in ['bert', 'bert-freeze'] else 128
         self.graph_embedding_dim = 128
         self.encoding_dim = 64
-        self.ensemble_num = 4
-        self.max_cotraining_iterations = 8
+        self.ensemble_num = 8
+        self.max_cotraining_iterations = 10
         self.max_epochs = 64
-        self.early_stop_time = 16
+        self.early_stop_time = 8
         self.num_classes = 2
-        self.threshold = 0.999
+        self.threshold = 0.75
     
     def lr(self, mode):
         if mode == 'text' and self.text_encoder == 'bert':
@@ -47,6 +47,9 @@ class Config:
             if self.text_encoder in ['lstm', 'bert-freeze']:
                 batch_size *= 4
         return batch_size
+    
+    def set_concepts_parameters(self, concepts):
+        self.concept_num = len(concepts)
     
     def set_gcn_parameters(self, graph):
         self.laplacian1 = self.to_laplacian_matrix(graph.T)
