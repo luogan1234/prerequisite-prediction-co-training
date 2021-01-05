@@ -34,6 +34,10 @@ def main():
     args = parser.parse_args()
     set_seed(args.seed)
     config = Config(args.dataset, args.text_encoder, args.graph_layer, args.init_num, args.max_change_num, args.seed, args.cpu)
+    model_path = 'result/model_states/{}.pth'.format(config.store_name())
+    if os.path.exists(model_path):
+        print('experiment done.')
+        return
     data_loader = PreqDataLoader(config)
     processor = Processor(config, data_loader)
     processor.train()

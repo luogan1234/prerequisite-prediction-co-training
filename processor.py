@@ -57,8 +57,10 @@ class Processor:
         score = {'acc': acc, 'p': p, 'r': r, 'f1': f1}
         return eval_loss, score
     
-    def new_label(self, data, mode):
+    def new_label(self, mode):
         # cache embeddings first, especially for text models (the unlabeled data is O(n^2))
+        data = self.data_loader.get_unlabeled_data()
+        print('Batch data number: unlabeled {}'.format(len(data)))
         print('Cache concept embeddings.')
         concepts = self.data_loader.get_concepts()
         self.model.eval(mode)
@@ -90,54 +92,53 @@ class Processor:
         s = 'acc: {:.4f}, p: {:.4f}, r: {:.4f}, f1: {:.4f}'.format(score['acc'], score['p'], score['r'], score['f1'])
         return s
     
-    def train_model(self, mode, do_new_label=True):
+    def train_model(self, mode):
         # train each selected model seperately
         self.model.clear_models(mode)
         scores = []
         for i in range(self.config.ensemble_num):
             print('Ensemble {} model id {} train start.'.format(mode, i))
-            train, unlabeled, eval, test = self.data_loader.get_train(mode)
-            print('Batch data number ({} samples for train batch, {} samples for eval batch): train {}, (original) unlabeled {}, eval {}, test {}'.format(self.config.batch_size('train'), self.config.batch_size('eval'), len(train), len(unlabeled), len(eval), len(test)))
+            train, valid, test = self.data_loader.get_training_data(mode)
+            print('Batch data number ({} samples for train batch, {} samples for eval batch): train {}, valid {}, test {}'.format(self.config.batch_size('train'), self.config.batch_size('eval'), len(train), len(valid), len(test)))
             if mode == 'text':
                 model = self.model.new_text_model()
             if mode == 'graph':
                 model = self.model.new_graph_model()
             model.to(self.config.device)
             model.train()
-            optimizer = optim.Adam(model.parameters(), lr=self.config.lr(mode))
+            if self.config.text_encoder != 'bert' or mode == 'graph':
+                optimizer = optim.Adam(model.parameters(), lr=self.config.lr(mode))
+            else:
+                optimizer = optim.AdamW(model.parameters(), lr=self.config.lr(mode), eps=1e-8)
             train_tqdm = tqdm.tqdm(range(self.config.max_epochs))
-            train_tqdm.set_description('Epoch {} | train_loss: {:.4f} eval_loss: {:.4f}'.format(0, 0, 0))
-            best_para, min_loss, patience = model.state_dict(), 1e16, 0
+            train_tqdm.set_description('Epoch {} | train_loss: {:.4f} valid_loss: {:.4f}'.format(0, 0, 0))
+            best_para, min_loss, patience = copy.deepcopy(model.state_dict()), 1e16, 0
             for epoch in train_tqdm:
                 train_loss = 0.0
                 for batch in train:
                     loss = self.train_one_step(batch, model, optimizer)
                     train_loss += loss
                 train_loss /= len(train)
-                eval_loss, score = self.evaluate(eval, model)
-                train_tqdm.set_description('Epoch {} | train_loss: {:.4f} eval_loss: {:.4f}'.format(epoch, train_loss, eval_loss))
-                if eval_loss < min_loss:
+                valid_loss, score = self.evaluate(valid, model)
+                train_tqdm.set_description('Epoch {} | train_loss: {:.4f} valid_loss: {:.4f}'.format(epoch, train_loss, valid_loss))
+                if valid_loss < min_loss:
                     patience = 0
-                    min_loss = eval_loss
+                    min_loss = valid_loss
                     best_para = copy.deepcopy(model.state_dict())
                 patience += 1
                 if patience > self.config.early_stop_time:
                     train_tqdm.close()
                     break
             model.load_state_dict(best_para)
-            print('Train model {} finished, stop at {} epochs, min eval_loss {:.4f}'.format(i, epoch, min_loss))
+            print('Train model {} finished, stop at {} epochs, min valid_loss {:.4f}'.format(i, epoch, min_loss))
             test_loss, score = self.evaluate(test, model)
             scores.append(score)
             print('Test model {} finished, test loss {:.4f},'.format(i, test_loss), self.score_to_str(score))
-        if do_new_label:
-            flag = self.new_label(unlabeled, mode)
-        else:
-            flag = True
         average_score = {}
         for key in scores[0]:
             average_score[key] = sum([score[key] for score in scores])/len(scores)
         print('Train {} models finished, ensemble'.format(mode), self.score_to_str(average_score))
-        return average_score, flag
+        return scores, average_score
     
     def get_concept_embeddings(self):
         #self.config.embeddings = self.data_loader.dataset.concept_embedding[:, :self.config.graph_embedding_dim].to(self.config.device)
@@ -152,19 +153,23 @@ class Processor:
     
     def train(self):
         self.model = CoTrainingModels(self.config)
-        score_texts, score_graphs = [], []
+        score_text_list, score_graph_list = [], []
         for iteration in range(self.config.max_cotraining_iterations):
             print('Iteration {} start.'.format(iteration))
             print('Train text models.')
-            score_text, flag_text = self.train_model('text', iteration>0)
-            print('Get concept embeddings.')
+            score_texts, _ = self.train_model('text')
+            score_text_list.append(score_texts)
+            print('Get concept embeddings for graph models.')
             self.get_concept_embeddings()
             print('Train graph models.')
-            score_graph, flag_graph = self.train_model('graph', iteration>0)
-            score_texts.append(score_text)
-            score_graphs.append(score_graph)
+            score_graphs, _ = self.train_model('graph')
+            score_graph_list.append(score_graphs)
+            print('Generate new labels from text models.')
+            flag_text = self.new_label('text')
+            print('Generate new labels from graph models.')
+            flag_graph = self.new_label('graph')
             if not flag_text and not flag_graph:
-                print('Stop early, since no samples in train_unlabeled are new labeled after iteration {}'.format(iteration))
+                print('Stop early, since no unlabeled samples are newly labeled after iteration {}'.format(iteration))
                 break
         if flag_text | flag_graph:
             print('Stop normally after reaching the max_cotraining_iterations.')
@@ -174,8 +179,8 @@ class Processor:
             torch.save([para_text, para_graph], f)
         with open('result/result.txt', 'a', encoding='utf-8') as f:
             obj = self.config.parameter_info()
-            obj['score_texts'] = score_texts
-            obj['score_graphs'] = score_graphs
+            obj['score_texts'] = score_text_list
+            obj['score_graphs'] = score_graph_list
             f.write(json.dumps(obj)+'\n')
     
     def predict(self):
@@ -191,7 +196,7 @@ class Processor:
         for mode in ['text', 'graph']:
             for batch in tqdm.tqdm(concepts):
                 self.model.set_cached_embeds(batch)
-        data = self.data_loader.get_predict()
+        data = self.data_loader.get_prediction_data()
         self.get_concept_embeddings()
         print('Predict prerequisite relations between concepts.')
         self.model.eval()

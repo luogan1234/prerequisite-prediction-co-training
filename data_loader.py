@@ -48,7 +48,8 @@ class PreqDataset:
             for token in tqdm.tqdm(self.tokens):
                 token = torch.tensor(token, dtype=torch.long).to(config.device)
                 with torch.no_grad():
-                    h, _ = bert(token.unsqueeze(0))
+                    outputs = bert(token.unsqueeze(0))
+                    h = outputs.last_hidden_state
                     h = h.squeeze(0)[1:-1]
                     ce = torch.mean(h, 0)
                 concept_embedding.append(ce.cpu())
@@ -144,31 +145,37 @@ class PreqDataLoader:
         self.fn = MyPreqBatch(config)
         self.fn2 = MyConceptBatch(config)
     
-    def get_train(self, mode):
+    def get_training_data(self, mode):
         labeled, unlabeled = self.dataset.labeled_data, self.dataset.unlabeled_data
-        train, eval, test = [], [], []
+        train, valid, test = [], [], []
         for i in range(self.config.num_classes):
             class_labeled = [datum for datum in labeled if datum['ground_truth']==i]
             n, d = len(class_labeled), self.config.init_num
             if d == -1:
-                d = int(n*0.8)
+                d = min(int(n*0.8), n-16*2)  # at least 16 samples for valid & test
             splits = random_split(class_labeled, [d, (n-d)//2, (n-d+1)//2])
             train += splits[0]
-            eval += splits[1]
+            valid += splits[1]
             test += splits[2]
         train += [datum for datum in unlabeled if datum['label'] >= 0]
         train = DataLoader(train, self.config.batch_size('train'), shuffle=True, collate_fn=self.fn)
-        unlabeled = DataLoader(unlabeled, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
-        eval = DataLoader(eval, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
+        valid = DataLoader(valid, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
         test = DataLoader(test, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
-        return train, unlabeled, eval, test
+        return train, valid, test
+    
+    def get_unlabeled_data(self):
+        unlabeled = self.dataset.unlabeled_data
+        n = len(unlabeled)
+        unlabeled = random.sample(unlabeled, n//2)
+        unlabeled = DataLoader(unlabeled, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
+        return unlabeled
     
     def get_concepts(self):
         concepts = self.dataset.concept_data
         data = DataLoader(concepts, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn2)
         return data
     
-    def get_predict(self):
+    def get_prediction_data(self):
         data = self.dataset.labeled_data+self.dataset.unlabeled_data
         data = DataLoader(data, self.config.batch_size('eval'), shuffle=False, collate_fn=self.fn)
         return data
