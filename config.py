@@ -25,16 +25,22 @@ class Config:
         self.text_embedding_dim = 768 if text_encoder in ['bert', 'bert-freeze'] else 128
         self.graph_embedding_dim = 128
         self.encoding_dim = 64
-        self.ensemble_num = 4 if text_encoder == 'bert' else 8
-        self.max_cotraining_iterations = 10
+        self.max_cotraining_iterations = 6
         self.max_epochs = 64
         self.early_stop_time = 8
         self.num_classes = 2
         self.threshold = 0.8
     
+    def ensemble_num(self, mode):
+        if mode == 'text' and self.text_encoder == 'bert':
+            num = 2
+        else:
+            num = 4
+        return num
+    
     def lr(self, mode):
         if mode == 'text' and self.text_encoder == 'bert':
-            lr = 2e-5
+            lr = 4e-5
         else:
             lr = 1e-3
         return lr

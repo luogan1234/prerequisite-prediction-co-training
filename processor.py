@@ -96,7 +96,7 @@ class Processor:
         # train each selected model seperately
         self.model.clear_models(mode)
         scores = []
-        for i in range(self.config.ensemble_num):
+        for i in range(self.config.ensemble_num(mode)):
             print('Ensemble {} model id {} train start.'.format(mode, i))
             train, valid, test = self.data_loader.get_training_data(mode)
             print('Batch data number ({} samples for train batch, {} samples for eval batch): train {}, valid {}, test {}'.format(self.config.batch_size('train'), self.config.batch_size('eval'), len(train), len(valid), len(test)))
@@ -106,10 +106,7 @@ class Processor:
                 model = self.model.new_graph_model()
             model.to(self.config.device)
             model.train()
-            if self.config.text_encoder != 'bert' or mode == 'graph':
-                optimizer = optim.Adam(model.parameters(), lr=self.config.lr(mode))
-            else:
-                optimizer = optim.AdamW(model.parameters(), lr=self.config.lr(mode), eps=1e-8)
+            optimizer = optim.AdamW(model.parameters(), lr=self.config.lr(mode), eps=1e-8)
             train_tqdm = tqdm.tqdm(range(self.config.max_epochs))
             train_tqdm.set_description('Epoch {} | train_loss: {:.4f} valid_loss: {:.4f}'.format(0, 0, 0))
             best_para, min_loss, patience = copy.deepcopy(model.state_dict()), 1e16, 0

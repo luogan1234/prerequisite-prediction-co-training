@@ -126,6 +126,8 @@ venv.bak/
 dmypy.json
 dataset/
 dataset_old/
+dataset_stage1/
+dataset_stage2/
 result/
 wandb/
 label/
