@@ -18,6 +18,7 @@ def stat(args):
             if args.dataset not in ['', obj['dataset']] or args.text_encoder not in ['',  obj['text_encoder']] or args.graph_layer not in ['', obj['graph_layer']]:
                 continue
             print('dataset: {}, text_encoder: {}, graph_layer: {}, init_num: {}, max_change_num: {}'.format(obj['dataset'], obj['text_encoder'], obj['graph_layer'], obj['init_num'], obj['max_change_num']))
+            '''
             for i, [score_text, score_graph] in enumerate(zip(obj['score_texts'], obj['score_graphs'])):
                 print('Iteration {}'.format(i))
                 max_f1, min_f1, mean_p, mean_r, mean_f1 = get_info(score_text)
@@ -30,7 +31,6 @@ def stat(args):
                 print(' & {:.3f} & {:.3f} & {:.3f}'.format(mean_p, mean_r, mean_f1))
                 max_f1, min_f1, mean_p, mean_r, mean_f1 = get_info(score_graph)
                 print(' & {:.3f} & {:.3f} & {:.3f}'.format(mean_p, mean_r, mean_f1))
-            '''
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prerequisite prediction')
