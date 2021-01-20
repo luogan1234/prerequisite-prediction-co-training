@@ -8,7 +8,7 @@ class Config:
         self.text_encoder = text_encoder
         self.graph_layer = graph_layer
         self.init_num = init_num
-        self.max_change_num = max_change_num
+        self.max_change_num = max_change_num if max_change_num >= 0 else 10000000
         self.seed = seed
         self.device = 'cpu' if cpu else 'cuda'
         if dataset in ['moocen']:
@@ -19,18 +19,24 @@ class Config:
             self.vocab_num = 21128  # bert-base-chinese
         assert self.language, 'Need to provide the language information for new datasets'
         
-        self.max_term_length = 10
+        self.max_term_length = 20
         self.word_embedding_dim = 32
         self.attention_dim = 32
         self.text_embedding_dim = 768 if text_encoder in ['bert', 'bert-freeze'] else 128
         self.graph_embedding_dim = 128
         self.encoding_dim = 64
-        self.ensemble_num = 8
-        self.max_cotraining_iterations = 10
+        self.max_cotraining_iterations = 6
         self.max_epochs = 64
         self.early_stop_time = 8
         self.num_classes = 2
-        self.threshold = 0.75
+        self.threshold = 0.8
+    
+    def ensemble_num(self, mode):
+        if mode == 'text' and self.text_encoder == 'bert':
+            num = 2
+        else:
+            num = 4
+        return num
     
     def lr(self, mode):
         if mode == 'text' and self.text_encoder == 'bert':

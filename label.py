@@ -21,21 +21,23 @@ def save(file, data, is_json=None):
             string = json.dumps(obj, ensure_ascii=False) if is_json else obj
             f.write(string+'\n')
 
-def work(field):
+def work(field, num):
     print('Create candidate pairs for field {}.'.format(field))
-    concepts = load('dataset/{}/final_concepts.txt'.format(field))
-    predictions = load('result/predictions/{}_bert-freeze_gcn_-1_36_0.json'.format(field))
-    predictions = [obj for obj in predictions if obj['ground_truth']==-1 and obj['c1'] in concepts and obj['c2'] in concepts]
-    predictions = [obj for obj in predictions if obj['text_predict'][1]+obj['graph_predict'][1] > 1.8]
-    predictions.sort(key=lambda x: (x['text_predict'][1]+x['graph_predict'][1]), reverse=True)
+    concepts = load('dataset/{}/concepts.txt'.format(field))
+    predictions = load('result/predictions/{}_bert_gcn_-1_36_0.json'.format(field))
+    filtered_list = []
+    for obj in predictions:
+        if obj['ground_truth']==-1 and obj['c1'] in concepts and obj['c2'] in concepts and obj['text_predict'][1]+obj['graph_predict'][1] > 1.7:
+            filtered_list.append(obj)
+    filtered_list.sort(key=lambda x: (x['text_predict'][1]+x['graph_predict'][1]), reverse=True)
     res = []
-    for obj in random.sample(predictions, min(len(predictions), 4000)):
+    for obj in random.sample(filtered_list, min(len(filtered_list), num)):
         res.append({'label': 0, 'c1': obj['c1'], 'c2': obj['c2']})
     save('label/{}.json'.format(field), res)
 
 if __name__ == '__main__':
-    work('cs')
-    work('psy')
-    work('math')
-    work('phy')
-    work('chem')
+    work('cs', 3000)
+    work('psy', 1000)
+    work('math', 1000)
+    #work('phy')
+    #work('chem')

@@ -24,10 +24,12 @@ class BERTEncoder(BaseModule):
     
     def forward(self, x):
         if self.config.text_encoder == 'bert':
-            h, _ = self.bert(x, attention_mask=(x>0))
+            outputs = self.bert(x, attention_mask=(x>0))
+            h = outputs.last_hidden_state
         else:
             with torch.no_grad():
-                h, _ = BERTEncoder.bert(x, attention_mask=(x>0))
+                outputs = BERTEncoder.bert(x, attention_mask=(x>0))
+                h = outputs.last_hidden_state
                 h = h.detach()
                 h[x==0] = 0
         # h: [batch_size, seq_len, embedding_dim]

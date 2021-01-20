@@ -62,16 +62,11 @@ def set_seed(seed):
 def main():
     parser = argparse.ArgumentParser(description='Prerequisite prediction')
     parser.add_argument('-dataset', type=str, required=True)
-    parser.add_argument('-alpha', type=float, default=None)
+    parser.add_argument('-alpha', type=float, default=0.3)
     parser.add_argument('-seed', type=int, default=0)
     args = parser.parse_args()
     assert os.path.exists('dataset/{}/'.format(args.dataset))
     set_seed(args.seed)
-    if not args.alpha:
-        if args.dataset == 'moocen':
-            args.alpha = 0.1
-        if args.dataset in ['mooczh', 'cs', 'psy','math', 'phy', 'chem']:
-            args.alpha = 0.3
     assert 0.0 <= args.alpha <= 1.0
     build_concept_graph(args.dataset, args.alpha)
 
