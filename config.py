@@ -34,7 +34,7 @@ class Config:
     
     def lr(self, mode):
         if mode == 'text' and self.text_encoder == 'bert':
-            lr = 1e-5
+            lr = 4e-5
         else:
             lr = 1e-3
         return lr
