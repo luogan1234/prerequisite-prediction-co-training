@@ -48,8 +48,7 @@ class PreqDataset:
             for token in tqdm.tqdm(self.tokens):
                 token = torch.tensor(token, dtype=torch.long).to(config.device)
                 with torch.no_grad():
-                    outputs = bert(token.unsqueeze(0))
-                    h = outputs.last_hidden_state
+                    h, _ = bert(token.unsqueeze(0))
                     h = h.squeeze(0)[1:-1]
                     ce = torch.mean(h, 0)
                 concept_embedding.append(ce.cpu())
